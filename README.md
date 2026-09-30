@@ -1,64 +1,44 @@
 # gpu-inference-journey
 
-A 9-month, job-ready plan for moving from data engineering into **LLM inference / performance engineering**. This repo is where I track the work: notes, kernels, benchmarks, and write-ups.
+A 9-month deep dive into **how LLMs actually run on GPUs**, starting from a data engineering background. The question driving it: what happens between sending a prompt and getting tokens back, and why is it fast or slow?
+
+The path goes from the serving engine (vLLM, SGLang) down to the kernels and the hardware limits underneath. This repo is where I keep the notes, kernels, benchmarks, and write-ups along the way.
 
 - **Started:** Sep 30, 2026
-- **Target role:** LLM inference / performance engineer. The job is making open-weight models serve faster and cheaper, from the serving engine down to the kernels when needed.
-- **Budget:** ~12 hrs/week alongside a full-time job, ~470 hrs total, ~$260–500 in rented GPU time
+- **Pace:** ~12 hrs/week alongside a full-time job, ~470 hrs total
+- **Compute:** ~$260–500 in rented GPU time
 
 ---
 
 ## Contents
 
-- [What employers screen for](#what-employers-screen-for)
 - [Plan at a glance](#plan-at-a-glance)
 - [Phase 0: Foundations](#phase-0-foundations-weeks-16-70-hrs)
 - [Phase 1: CUDA, Triton, profiling](#phase-1-cuda-triton-profiling-weeks-716-120-hrs)
 - [Phase 2: Inference systems](#phase-2-inference-systems-weeks-1730-170-hrs)
-- [Phase 3: Public proof of work + job search](#phase-3-public-proof-of-work--job-search-weeks-3139-110-hrs)
+- [Phase 3: Contribute and share](#phase-3-contribute-and-share-weeks-3139-110-hrs)
 - [Weekly schedule and compute budget](#weekly-schedule-and-compute-budget)
-- [Risks, weak spots, and what was cut](#risks-weak-spots-and-what-was-cut)
+- [Risks and what was left out](#risks-and-what-was-left-out)
 - [Repo layout](#repo-layout)
 - [Sources](#sources)
 
 ---
 
-## What employers screen for
-
-The plan is built backward from what 2026 postings actually ask for.
-
-| Skill employers name | Where it shows up (2026 postings) | Covered in |
-|---|---|---|
-| Hands-on vLLM / SGLang / TensorRT-LLM, ideally upstream PRs | NVIDIA Sr. AI Inference: author PRs, reviews, benchmarks, tests upstream. Together AI: must know at least one inference framework | Phase 2, Phase 3 |
-| Runtime internals: batching/scheduling, KV-cache paging, streaming | NVIDIA, Luminal: KV caching, paged attention, batching, token streaming | Phase 2 |
-| Speculative decoding, TP/EP/PP parallelism, prefill-decode disaggregation | NVIDIA AI Inference Systems | Phase 2 |
-| Profiling from Python down to C++/CUDA, data-driven optimization | NVIDIA (both postings) | Phases 1–2 |
-| GPU programming (CUDA / Triton), quantization | Together AI (one of: CUDA/Triton, compiler, quantization, cluster scheduling); Luminal | Phase 1, Phase 2 |
-| CUDA graphs, torch.compile | Together AI | Phase 2 |
-| Benchmark methodology + regression tests | NVIDIA (MLPerf, perf/correctness regression suites) | Phase 2 |
-| Public writing on inference | Inferact lists widely shared technical blogs on vLLM or LLM inference as a qualification | Phase 3 |
-
-**Pay signal:** Together AI $160k–$230k · Luminal $150k–$350k · Inferact $200k–$400k + equity.
-
-**Reality check:** senior postings ask for 3–5+ years (Together: 3+ in inference, distributed systems or HPC; NVIDIA: 5+ production software). Nine months of evenings won't clear that bar for a senior title. It does make me credible for an inference/ML-platform role at an enterprise, a mid-level role at a neocloud or startup, or an internal move. Public PRs are what close the experience gap. **Visa:** Inferact sponsors case by case, so check each posting.
-
----
-
 ## Plan at a glance
 
-Don't enter a phase until the previous one's exit criteria are met. **Phase 2 matters most** because it produces the evidence employers screen for.
+Don't enter a phase until the previous one's exit criteria are met. Each phase builds on the one before: hardware intuition → kernels → serving systems → contributing back.
 
 | Phase | Weeks | Hours | Focus | Key deliverable | GPU cost |
 |---|---|---|---|---|---|
 | 0 | 1–6 | ~70 | C++ reading, GPU architecture, roofline thinking | vLLM served + benchmarked; first CUDA kernels | ~$5 |
 | 1 | 7–16 | ~120 | CUDA, Triton, Nsight profiling | Fused RMSNorm/SwiGLU Triton kernel repo | $45–90 |
-| **2** | **17–30** | **~170** | **vLLM/SGLang internals, quantization, parallelism, benchmarking** | **MoE cost/latency study + first upstream PR** | **$180–300** |
-| 3 | 31–39 | ~110 | Upstream PRs, writing, interview prep, applications | 3+ merged PRs, 3 write-ups, 20+ applications | $30–100 |
+| 2 | 17–30 | ~170 | vLLM/SGLang internals, quantization, parallelism, benchmarking | MoE cost/latency study + first upstream PR | $180–300 |
+| 3 | 31–39 | ~110 | Upstream PRs, a competition, writing | 3+ merged PRs, 3 write-ups | $30–100 |
 
 ```
 Wk  1 ──────── 6 ─────────────── 16 ──────────────────────── 30 ─────────────── 39
-    │ Phase 0   │ Phase 1          │ Phase 2 (gets you hired)   │ Phase 3          │
-    │ Foundations│ CUDA/Triton/prof │ Inference systems          │ Proof + job hunt │
+    │ Phase 0   │ Phase 1          │ Phase 2                    │ Phase 3          │
+    │ Foundations│ CUDA/Triton/prof │ Inference systems          │ Contribute/share │
                                         ▲ first PR starts wk 22
 ```
 
@@ -89,7 +69,7 @@ Wk  1 ──────── 6 ─────────────── 1
 
 ## Phase 1: CUDA, Triton, profiling (weeks 7–16, ~120 hrs)
 
-**Goal:** write correct kernels, profile them, and state how close they get to hardware limits. Employers care more about the measurement discipline than the kernel itself.
+**Goal:** write correct kernels, profile them, and state how close they get to hardware limits. The measurement discipline matters more than the kernel itself.
 
 | Block | Resource | Hours |
 |---|---|---|
@@ -117,7 +97,7 @@ Wk  1 ──────── 6 ─────────────── 1
 
 ## Phase 2: Inference systems (weeks 17–30, ~170 hrs)
 
-This is the phase that gets you hired. Every item maps to a line in the postings above: runtime internals, quantization, parallelism, benchmarking, upstream PRs.
+**Goal:** understand a real serving engine from the inside: how requests get scheduled and batched, how the KV cache is managed, and what quantization and parallelism actually buy you.
 
 | Block | Resource | Hours |
 |---|---|---|
@@ -131,7 +111,7 @@ This is the phase that gets you hired. Every item maps to a line in the postings
 | Collectives | GPU MODE lecture 17 (NCCL) | 3 |
 | Benchmark methodology | `vllm bench serve`; p50/p99 TTFT and inter-token latency; goodput under an SLO; realistic request-length distributions | 6 |
 | Reading PRs, issues, design docs | vLLM/SGLang GitHub, weekly | 15 |
-| Production ops (added from critique) | Serve vLLM behind Kubernetes with request-level metrics, autoscaling, observability | ~10 |
+| Production ops | Serve vLLM behind Kubernetes with request-level metrics, autoscaling, observability | ~10 |
 | Deliverable A | Cost/latency study, below | 45 |
 | Deliverable B | First upstream PR, below | 30 |
 
@@ -139,7 +119,7 @@ This is the phase that gets you hired. Every item maps to a line in the postings
 - Pick a current open-weight MoE that fits on 1–4 H100s (check what's trending on Hugging Face at the time)
 - Sweep: BF16 vs FP8 vs INT4; concurrency 1–256; TP=1/2/4; speculative decoding on/off; prefix caching on/off
 - Report **cost per 1M tokens at a p99 latency target**, not peak throughput. Compare against API pricing and a managed option like Databricks serving.
-- Strongest version: run it as an approved work project on a real internal use case. That's resume material with business impact attached.
+- Strongest version: run it as an approved work project on a real internal use case, so the numbers answer a real question.
 
 **Deliverable B: first merged PR to vLLM or SGLang (start by week 22)**
 - Start with `good first issue` labels, benchmark fixes, test coverage, docs for features you've actually used
@@ -154,39 +134,32 @@ This is the phase that gets you hired. Every item maps to a line in the postings
 
 ---
 
-## Phase 3: Public proof of work + job search (weeks 31–39, ~110 hrs)
+## Phase 3: Contribute and share (weeks 31–39, ~110 hrs)
 
-**Goal:** turn skills into evidence a hiring manager can click on, then apply. Postings reward upstream PRs and public write-ups, not certificates.
+**Goal:** give back to the projects I learned from and write up what I found. Explaining something publicly is the best test of whether I understand it.
 
 | Block | What | Hours |
 |---|---|---|
 | More upstream PRs | Two more merged, at least one performance-related (a benchmark result in the PR description) | 40 |
 | Competition entry | Whatever is live on GPU MODE (Discord → competitions channel). Submissions run on their hardware, so it's free datacenter GPU time | 30 |
 | Writing | 2 posts beyond Deliverable A: "tracing a request through vLLM" and the Phase 1 kernel write-up | 15 |
-| Interview prep | See below | 20 |
-| Targeting + outreach | Resume rewrite, LinkedIn, GPU MODE Discord and vLLM community channels | 5 + ongoing |
+| Self-check: can I explain it? | See below | 20 |
+| Community | GPU MODE Discord and vLLM community channels | 5 + ongoing |
 
-### Interview prep: what gets asked
+### Self-check: can I explain it?
 
-- **Inference system design:** serve model X at N requests/sec under a p99 latency target for $Y/month. Pick GPU count, quantization, parallelism, batching. Deliverable A is the rehearsal.
+- **Design a deployment:** serve model X at N requests/sec under a p99 latency target for $Y/month. Pick GPU count, quantization, parallelism, batching. Deliverable A is the practice run.
 - **Back-of-envelope math:** KV-cache memory per token, max concurrent sequences per GPU, decode tokens/sec from memory bandwidth. Do these without notes. The core KV-cache formula:
 
   $$\text{KV bytes per token} = 2 \times n_{\text{layers}} \times n_{\text{kv heads}} \times d_{\text{head}} \times \text{bytes per element}$$
 
-- **CUDA/Triton coding:** reduction, softmax, tiled matmul, explained while you write
-- **Debugging stories:** one real performance problem found with a profiler and fixed, with numbers
-
-### Where to apply, in order of realistic odds
-
-1. **Enterprise ML-platform / inference roles, including an internal move.** The data-engineering + Databricks background is an advantage here, not a detour.
-2. **Neoclouds and inference providers:** Together AI, Baseten, Fireworks, Modal, RunPod, Luminal-type startups.
-3. **Stretch:** NVIDIA, AMD, Inferact. Apply once there are 2+ merged PRs.
+- **Kernels from scratch:** reduction, softmax, tiled matmul, explained while writing
+- **A real debugging story:** one performance problem found with a profiler and fixed, with numbers
 
 **Exit criteria:**
 - [ ] 3+ merged upstream PRs
 - [ ] 3 public write-ups
 - [ ] Can do inference sizing math on a whiteboard in under 10 minutes
-- [ ] 20+ targeted applications sent
 
 ---
 
@@ -214,27 +187,26 @@ The plan assumes **12 hrs/week** alongside a full-time job. Below ~8 hrs/week it
 
 ---
 
-## Risks, weak spots, and what was cut
+## Risks and what was left out
 
-The plan is sound on skills and weakest on timeline and production operations.
+The plan is weakest on timeline and production operations.
 
 ### Weak spots
 
 1. **The timeline assumes zero missed weeks.** Budget 20–30% slack: plan for 9 months, expect 11–12. Protect the Phase 2 deliverables first if you slip.
 2. **Upstream PRs depend on other people.** vLLM/SGLang review queues can take weeks, which is why the first PR starts at week 22, not week 35. Keep PRs small and tied to bugs you actually hit.
-3. **Nine months doesn't replace 3–5 years of experience.** Senior titles at NVIDIA or Together are a stretch. The highest-odds landing is an enterprise ML-platform or inference role, especially an internal move.
-4. **Production operations are under-covered.** Enterprise self-hosting roles also ask about Kubernetes-based serving, autoscaling, observability and GPU cluster scheduling. The ~10 hr production ops block in Phase 2 addresses this; it's the cheapest gap to close given a data-engineering background.
-5. **Phase 1 may be deeper than strictly needed.** It stays because postings name profiling from Python down to CUDA. If behind schedule, cut the attention block and the last two matmul kernels, not the profiling.
-6. **The tools churn fast.** Kernel DSLs, quantization formats and vLLM internals change monthly; roofline math, memory hierarchy and scheduling don't. Re-check the resource list every quarter; don't re-plan.
-7. **Burnout is the real risk.** ~470 hours of evenings on top of a full-time job is a lot. One full rest week every 8 weeks is built into the slack.
+3. **Production operations are under-covered.** Real self-hosted deployments also involve Kubernetes-based serving, autoscaling, observability and GPU cluster scheduling. The ~10 hr production ops block in Phase 2 addresses this; it's the cheapest gap to close given a data-engineering background.
+4. **Phase 1 may feel deep.** It stays because you can't profile what you can't read, from Python down to CUDA. If behind schedule, cut the attention block and the last two matmul kernels, not the profiling.
+5. **The tools churn fast.** Kernel DSLs, quantization formats and vLLM internals change monthly; roofline math, memory hierarchy and scheduling don't. Re-check the resource list every quarter; don't re-plan.
+6. **Burnout is the real risk.** ~470 hours of evenings on top of a full-time job is a lot. One full rest week every 8 weeks is built into the slack.
 
-### Deliberately cut
+### Deliberately left out
 
 | Cut | Why |
 |---|---|
-| CuTe DSL / CUTLASS / TileLang / cuTile | Kernel-engineer depth. This route needs to read and profile kernels, not author GEMMs. Revisit only if switching to a kernel-engineer route |
-| Distributed training | Different job family. Inference postings don't ask for it |
-| Certifications | No posting reviewed names one. PRs and write-ups do the same job better |
+| CuTe DSL / CUTLASS / TileLang / cuTile | Kernel-engineer depth. The focus here is reading and profiling kernels, not authoring GEMMs. A good follow-on once this plan is done |
+| Distributed training | A different world from inference. Worth its own journey later |
+| Certifications | Building things and contributing upstream teaches more |
 | Buying a GPU | Prices are inflated and a used 3090 lacks FP8. Rent until usage passes ~15–20 hrs/week |
 | AMD ROCm | Get exposure through GPU MODE competitions rather than a dedicated block |
 
@@ -256,12 +228,11 @@ gpu-inference-journey/
 └── README.md
 ```
 
-The Phase 1 kernel deliverable and Phase 2 Deliverable A should be **their own public repos** so they're easy for hiring managers to find; link them from `deliverables/`.
+The Phase 1 kernel deliverable and Phase 2 Deliverable A should be **their own public repos** so they stand on their own; link them from `deliverables/`.
 
 ---
 
 ## Sources
 
-- **Job postings (checked Sep 30, 2026):** NVIDIA Sr. SWE, AI Inference · NVIDIA Sr. SWE, AI Inference Systems · Together AI, Inference Frameworks and Optimization Engineer · Luminal, Cloud Inference Engineer · Inferact, MTS Inference
 - **GPU pricing:** Thunder Compute H100 tracker · Spheron RunPod vs Vast.ai comparison
 - **Hour estimates** are rough, based on a typical pace for someone with strong SQL/Python and limited C++. Adjust after Phase 0 using actual pace.
